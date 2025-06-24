@@ -4,6 +4,7 @@ const connectDB = require('./config/db');
 const cors = require('cors');
 const authRouters=require("./routes/authRoutes")
 const blogRouters=require("./routes/blogRoutes")
+const profileRoutes=require("./routes/profileRoutes")
 
 dotenv.config();
 connectDB();
@@ -16,6 +17,8 @@ app.use(express.json());
 app.get('/', (req, res) => {
   res.send('Hello World!');
 })
+
+app.use('/api/profile', profileRoutes);
 app.use('/api/auth',authRouters);
 app.use('/api/blogs', blogRouters);
 
