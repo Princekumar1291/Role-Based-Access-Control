@@ -1,7 +1,8 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-
+const sendEmail = require('../utils/sendEmail');
+const crypto = require("crypto");
 
 
 
@@ -9,35 +10,59 @@ exports.signup = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ message: 'User already exists' });
+    let user = await User.findOne({ email });
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // If user exists but not verified, resend verification email
+    if (user && !user.verified) {
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      user.verificationToken = verificationToken;
+      await user.save();
 
-    // Create user
-    const newUser = new User({
-      name,
-      email,
-      password: hashedPassword,
-      role: role || 'user'
-    });
+      const verifyUrl = `http://localhost:5000/api/auth/verify-email?token=${verificationToken}`;
+      const html = `<h2>Email Verification</h2><p>Click <a href="${verifyUrl}">here</a> to verify your account.</p>`;
 
+      await sendEmail(email, 'Resend: Verify your Email', html);
+      return res.status(200).json({ message: "Verification email resent. Please check your inbox." });
+    }
+
+    // If verified user already exists
+    if (user) {
+      return res.status(400).json({ message: "Email already exists" });
+    }
+
+    // Create new user
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const newUser = new User({ name, email, password, role, verificationToken });
     await newUser.save();
 
-    res.status(201).json({
-      message: 'User registered successfully',
-      user: {
-        id: newUser._id,
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role
-      }
-    });
+    const verifyUrl = `http://localhost:5000/api/auth/verify-email?token=${verificationToken}`;
+    const html = `<h2>Email Verification</h2><p>Click <a href="${verifyUrl}">here</a> to verify your account.</p>`;
+
+    await sendEmail(email, 'Verify your Email', html);
+    res.status(201).json({ message: "Signup successful. Check your email to verify your account." });
+
   } catch (error) {
-    console.error('Signup Error:', error);
-    res.status(500).json({ message: 'Server error during signup' });
+    console.error('Signup error:', error.message);
+    res.status(500).json({ message: "Server error during signup" });
+  }
+};
+
+
+exports.verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.query;
+    const user = await User.findOne({ verificationToken: token });
+
+    if (!user) return res.status(400).json({ message: 'Invalid or expired token' });
+
+    user.verified = true;
+    user.verificationToken = undefined;
+    await user.save();
+
+    res.status(200).send('<h1>Email verified successfully! You can now log in.</h1>');
+  } catch (error) {
+    console.error('Email verification error:', error.message);
+    res.status(500).json({ message: 'Error verifying email' });
   }
 };
 
